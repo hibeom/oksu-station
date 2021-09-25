@@ -1,16 +1,12 @@
 package com.pinkcloud.oksupilot
 
 import android.animation.ObjectAnimator
-import android.annotation.SuppressLint
-import android.content.ContentResolver
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ScrollView
-import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -20,16 +16,11 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.SimpleExoPlayer
-import com.google.android.exoplayer2.source.ProgressiveMediaSource
-import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
 import com.google.android.exoplayer2.upstream.DataSpec
-import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
 import com.google.android.exoplayer2.upstream.RawResourceDataSource
-import com.google.android.exoplayer2.util.Util
 import com.pinkcloud.oksupilot.databinding.FragmentContentBinding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
 
 private fun playbackStateListener(scrollView: ScrollView): Player.EventListener {
     return object : Player.EventListener {
@@ -44,10 +35,6 @@ private fun playbackStateListener(scrollView: ScrollView): Player.EventListener 
 class ContentFragment : Fragment() {
 
     private lateinit var viewBinding: FragmentContentBinding
-
-    private var playWhenReady = true
-    private var currentWindow = 0
-    private var playbackPosition = 0L
 
     private var player: SimpleExoPlayer? = null
     private lateinit var playbackStateListener: Player.EventListener
@@ -77,21 +64,22 @@ class ContentFragment : Fragment() {
                     lifecycleScope.launch {
                         delay(600)
                         player?.let {
+                            it.playWhenReady = true
                             it.addListener(playbackStateListener)
                             it.prepare()
                         }
                     }
+                    isTriggered = true
                 }
-                isTriggered = true
             } else {
                 if (isTriggered) {
                     player?.let {
                         it.removeListener(playbackStateListener)
-                        it.playWhenReady = playWhenReady
+                        it.playWhenReady = false
                         it.seekTo(0, 0L)
                     }
+                    isTriggered = false
                 }
-                isTriggered = false
             }
         }
 
@@ -99,12 +87,8 @@ class ContentFragment : Fragment() {
     }
 
     private fun initializePlayer() {
-        val trackSelector = DefaultTrackSelector(requireContext()).apply {
-            setParameters(buildUponParameters().setMaxVideoSizeSd())
-        }
 
         player = SimpleExoPlayer.Builder(requireContext())
-            .setTrackSelector(trackSelector)
             .build()
             .also {
                 viewBinding.videoView.player = it
@@ -113,19 +97,12 @@ class ContentFragment : Fragment() {
                 val mediaItem = MediaItem.fromUri(rawDataSource.uri!!)
 
                 it.setMediaItem(mediaItem)
-                it.playWhenReady = playWhenReady
-                it.seekTo(currentWindow, playbackPosition)
-//                it.prepare()
+                it.seekTo(0, 0L)
             }
     }
 
     private fun releasePlayer() {
         player?.run {
-            playWhenReady = this.playWhenReady
-//            currentWindow = this.currentWindowIndex
-//            playbackPosition = this.currentPosition
-            currentWindow = 0
-            playbackPosition = 0L
             release()
         }
         player = null
