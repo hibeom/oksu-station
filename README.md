@@ -35,7 +35,7 @@ ObjectAnimator.ofInt(
     viewBinding.videoView.top
 ).setDuration(800).start()
 ```
-3. 손동작 영상 재생한다.
+3. 손동작 영상을 재생한다.
 ```kotlin
 player?.let {
     it.playWhenReady = true
