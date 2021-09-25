@@ -1,5 +1,7 @@
 package com.pinkcloud.oksupilot
 
+import android.animation.ObjectAnimator
+import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.net.Uri
 import android.os.Bundle
@@ -7,9 +9,16 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ScrollView
 import androidx.core.net.toUri
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
@@ -18,7 +27,19 @@ import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
 import com.google.android.exoplayer2.upstream.RawResourceDataSource
 import com.google.android.exoplayer2.util.Util
 import com.pinkcloud.oksupilot.databinding.FragmentContentBinding
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
+
+private fun playbackStateListener(scrollView: ScrollView): Player.EventListener {
+    return object : Player.EventListener {
+        override fun onPlaybackStateChanged(state: Int) {
+            if (state == ExoPlayer.STATE_ENDED) {
+                scrollView.setOnTouchListener(null)
+            }
+        }
+    }
+}
 
 class ContentFragment : Fragment() {
 
@@ -29,13 +50,51 @@ class ContentFragment : Fragment() {
     private var playbackPosition = 0L
 
     private var player: SimpleExoPlayer? = null
+    private lateinit var playbackStateListener: Player.EventListener
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        // Inflate the layout for this fragment
         viewBinding = FragmentContentBinding.inflate(inflater, container, false)
+
+        initializePlayer()
+        playbackStateListener = playbackStateListener(viewBinding.scrollView)
+
+        val screenHeight = requireContext().resources.displayMetrics.heightPixels
+        var isTriggered = false
+        viewBinding.scrollView.viewTreeObserver.addOnScrollChangedListener {
+
+            if (viewBinding.scrollView.scrollY + screenHeight > viewBinding.videoView.top) {
+                if (!isTriggered) {
+                    viewBinding.scrollView.smoothScrollBy(0, 0)
+                    viewBinding.scrollView.setOnTouchListener { v, event -> true }
+                    ObjectAnimator.ofInt(
+                        viewBinding.scrollView,
+                        "scrollY",
+                        viewBinding.videoView.top
+                    ).setDuration(800).start()
+                    lifecycleScope.launch {
+                        delay(600)
+                        player?.let {
+                            it.addListener(playbackStateListener)
+                            it.prepare()
+                        }
+                    }
+                }
+                isTriggered = true
+            } else {
+                if (isTriggered) {
+                    player?.let {
+                        it.removeListener(playbackStateListener)
+                        it.playWhenReady = playWhenReady
+                        it.seekTo(0, 0L)
+                    }
+                }
+                isTriggered = false
+            }
+        }
+
         return viewBinding.root
     }
 
@@ -49,9 +108,6 @@ class ContentFragment : Fragment() {
             .build()
             .also {
                 viewBinding.videoView.player = it
-//                val videoUri = Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "//" + requireContext().packageName + "/" + R.raw.hand_movement)
-//                Log.d("devlog", "uri: $videoUri")
-//                val mediaItem = MediaItem.fromUri(videoUri)
                 val rawDataSource = RawResourceDataSource(requireContext())
                 rawDataSource.open(DataSpec(RawResourceDataSource.buildRawResourceUri(R.raw.hand_movement)))
                 val mediaItem = MediaItem.fromUri(rawDataSource.uri!!)
@@ -59,15 +115,17 @@ class ContentFragment : Fragment() {
                 it.setMediaItem(mediaItem)
                 it.playWhenReady = playWhenReady
                 it.seekTo(currentWindow, playbackPosition)
-                it.prepare()
+//                it.prepare()
             }
     }
 
     private fun releasePlayer() {
         player?.run {
             playWhenReady = this.playWhenReady
-            currentWindow = this.currentWindowIndex
-            playbackPosition = this.currentPosition
+//            currentWindow = this.currentWindowIndex
+//            playbackPosition = this.currentPosition
+            currentWindow = 0
+            playbackPosition = 0L
             release()
         }
         player = null
@@ -75,11 +133,35 @@ class ContentFragment : Fragment() {
 
     override fun onStart() {
         super.onStart()
-        initializePlayer()
+        hideSystemUi()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        releasePlayer()
     }
 
     override fun onStop() {
         super.onStop()
-        releasePlayer()
+        showSystemUi()
+    }
+
+    private fun hideSystemUi() {
+        val window = requireActivity().window
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, viewBinding.root).let { controller ->
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    private fun showSystemUi() {
+        val window = requireActivity().window
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowInsetsControllerCompat(
+            window,
+            viewBinding.root
+        ).show(WindowInsetsCompat.Type.systemBars())
     }
 }
